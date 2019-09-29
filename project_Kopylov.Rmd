@@ -1,0 +1,692 @@
+---
+title: "Проект"
+author: "Валентин Копылов"
+date: "10.06.2019"
+output: html_document
+---
+
+# Исследование:
+## Выяснение факторов, влияющих на вероятность использования велосипеда в городе Москве
+
+### Предварительные гипотезы:
+1. Возраст респондента оказывает отрицательное влияние на вероятность катания на велосипеде
+2. Плохая инфраструктура оказывает негативное влияние на веротность катания на велосипеде
+3. Опасность поездки оказывает негативное влияние на вероятность катания на велосипеде
+
+
+### База данных: 
+Гугл-опрос: https://docs.google.com/forms/d/1aIwLqaRPXesWKB_azNFBsdzKjs2zFic4BPOISQQOiKA/edit
+
+Я создал свою гугл-опрос форму и кинул ее в множество Facebook сообществ, связанных с районным объединением, откуда я и получил своих респондентов.
+Список районных групп: 
+
+* [Гагаринский район](https://www.facebook.com/groups/sovetgagarin/)
+
+* [Обручевский район](https://www.facebook.com/groups/obruchevskiy/)
+
+* [Тропарево-Никулино соседи](https://www.facebook.com/groups/tropnik/)
+
+* [Фили Давыдково. Соседи](https://www.facebook.com/groups/249145022159351/)
+
+* [РАМЕНКИ](https://www.facebook.com/groups/Ramenki/)
+
+* [Независимые Хамовники](https://www.facebook.com/groups/131561047463457/)
+
+* [Район Филевский парк](https://www.facebook.com/groups/filipark/)
+
+* [Хорошево-мневники / Щукино Соседи](https://www.facebook.com/groups/1441778869409039/)
+
+* [Академический район](https://www.facebook.com/groups/akademichesky/)
+
+* [Лефортово](https://www.facebook.com/groups/Lefortovo/)
+
+* [Сокольники](https://www.facebook.com/groups/sokolniki/)
+
+* [Чертаново Центральное](https://www.facebook.com/groups/chertanovocentr/)
+
+* [Басманный LIVE/соседи](ttps://www.facebook.com/groups/basmanLIVE/)
+
+В дальнейшем, я выгрузил данные с сайта в формате csv. 
+
+```{r, message=FALSE}
+library(psych)
+library(rebus)
+library(stringr)
+library(jtools)
+library(huxtable)
+library(ggstance)
+library(ggplot2)
+library(gridExtra)
+library(stargazer)
+library(Amelia)
+library(dplyr)
+```
+
+```{r}
+df <- read.csv('velo2.csv')
+```
+
+Переименуем все переменные для удобства взаимодействовать:
+
+```{r}
+colnames(df) <- c('time', 'sex', 'age', 'education', 'district', 'work_study', 'bicycle', 'experience_bicycle',  'velobike',
+                  'not_velobike',  'aim_bike', 'bike_plus_others', 'personal_bike', 'velobike_station', 'personal_auto', 
+                  'how_far_work', 'bike_danger', 'infrustructure_bike', 'bike_work_parking', 'bike_home_parking',
+                  'bike_importance','bike_positive', 'what_is_bicycle')
+
+```
+
+Обработаем возраст
+```{r}
+df$age <- as.character(df$age)
+df$age[198] <- '30'
+df$age <- as.numeric(df$age)
+df %>% filter(age < 100) -> df
+summary(df$age)
+```
+
+Перекодируем пол:
+```{r}
+df$sex <- as.character(recode_factor(df$sex, 
+                                   'Мужской' = '0',
+                                   'Женский' = '1',
+                                   .default = NA_character_))
+df$sex <- as.factor(df$sex)
+summary(df$sex)
+```
+
+Перекодируем образование:
+```{r}
+levels(df$education) <- c('higher', 'higher, phd', 'uncomplete higher', 'uncomplete middle', 'middle common', 'middle special')
+summary(df$education)
+```
+
+Разберемся с районами!
+```{r}
+df$district <- as.character(df$district)
+
+df$district <- tolower(df$district)
+df$district[str_detect(df$district, pattern = ' '  %R% END)] <- str_replace_all(df$district[str_detect(df$district, pattern = ' '  %R% END)], " ", "")
+
+df$district[str_detect(df$district, pattern = START %R% 'алексе')] <- 'алексеевский'
+df$district[str_detect(df$district, pattern = START %R% 'красносе')] <- 'красносельский'
+
+df$district[str_detect(df$district, pattern = START %R% 'западный')] <- 'зао'
+
+df$district[str_detect(df$district, pattern = START %R% 'изма')] <- 'измайлово'
+
+df$district[str_detect(df$district, pattern = START %R% 'юг')] <- 'юзао'
+
+df$district[str_detect(df$district, pattern = 'ушки'  %R% END)] <- 'черемушки'
+
+df$district[str_detect(df$district, pattern = START %R% 'хорош')] <- 'хорошево-мневники'
+df$district[str_detect(df$district, pattern = START %R% 'мнёвники')] <- 'хорошево-мневники'
+
+df$district[str_detect(df$district, pattern = START %R% 'хамовн')] <- 'хамовники'
+
+df$district[str_detect(df$district, pattern = START %R% 'фили')] <- 'фили-давыдково'
+df$district[str_detect(df$district, pattern = START %R% 'давыдково')] <- 'фили-давыдково'
+
+df$district[str_detect(df$district, pattern = 'никул')] <- 'тропарево-никулино'
+df$district[str_detect(df$district, pattern = 'тропар')] <- 'тропарево-никулино'
+
+df$district[str_detect(df$district, pattern = START %R% 'нагатино')] <- 'нагатино-садовники'
+
+df$district[str_detect(df$district, pattern = START %R% 'цаоб')] <- 'басманный'
+df$district[str_detect(df$district, pattern = 'басм')] <- 'басманный'
+
+df$district[str_detect(df$district, pattern = 'бутово')] <- 'бутово'
+
+df$district[str_detect(df$district, pattern = 'плый')] <- 'теплый стан'
+
+df$district[str_detect(df$district, pattern = 'цао')] <- 'цао'
+df$district[str_detect(df$district, pattern = 'центр')] <- 'цао'
+
+
+df$district[str_detect(df$district, pattern = ', хоро')] <- 'сокол'
+
+df$district[str_detect(df$district, pattern = 'гагарин')] <- 'гагаринский'
+
+df$district[str_detect(df$district, pattern = 'горы')] <- 'гагаринский'
+
+df$district[str_detect(df$district, pattern = 'академ')] <- 'академический'
+df$district[str_detect(df$district, pattern = 'вьетнам')] <- 'академический' # это мем
+df$district[str_detect(df$district, pattern = 'сайгон')] <- 'академический' # это тоже мем
+
+df$district[str_detect(df$district, pattern = 'кунце')] <- 'кунцево'
+
+df$district[str_detect(df$district, pattern = 'парк')] <- 'филевский парк'
+
+df$district[str_detect(df$district, pattern = 'иван')] <- 'ивановское'
+
+df$district[str_detect(df$district, pattern = 'очаково')] <- 'очаково-матвеевское'
+
+# интересуют московские районы
+df$district[str_detect(df$district, pattern = '19')] <- NA
+df$district[str_detect(df$district, pattern = 'москов')] <- NA
+df$district[str_detect(df$district, pattern = 'москва')] <- NA
+df$district[str_detect(df$district, pattern = 'замкадье')] <- NA
+df$district[str_detect(df$district, pattern = 'балашиха')] <- NA
+df$district[str_detect(df$district, pattern = 'истринский')] <- NA
+df$district[str_detect(df$district, pattern = 'курортный')] <- NA
+df$district[str_detect(df$district, pattern = 'дело')] <- NA
+df$district[str_detect(df$district, pattern = 'курортный')] <- NA
+df$district <- as.factor(df$district)
+
+summary(df$district)
+```
+
+Преобразуем переменую занятости
+```{r}
+df$work_study <- as.character(df$work_study)
+
+df$work_study[str_detect(df$work_study, pattern = 'екр')] <- 'Декрет'
+df$work_study[str_detect(df$work_study, pattern = or('Дом',"Я безработный", 'отпу', 'Рен', 'Не р', 'пуск', 'хоз'))] <- 'Безработный'
+df$work_study[str_detect(df$work_study, pattern = 'енси')] <- 'Пенсионер'
+df$work_study[str_detect(df$work_study, pattern = or('Пре',"Я работаю", 'аботаю', 'риланс'))] <- 'Работает'
+df$work_study[str_detect(df$work_study, pattern = 'Я учусь')] <- 'Учится'
+df$work_study <- as.factor(df$work_study)
+summary(df$work_study)
+```
+
+Преобразуем бинарные переменные:
+
+Зависимая переменная анализа:
+```{r}
+df$bicycle <- as.factor(as.character(recode_factor(df$bicycle, 
+                            'Да' = '1',
+                            'Нет' = '0', .default = NA_character_)))
+summary(df$bicycle)
+```
+
+
+```{r}
+levels(df$experience_bicycle)[1] <- NA
+summary(df$experience_bicycle)
+
+
+levels(df$velobike)[1] <- NA
+df$velobike <- as.factor(as.character(recode_factor(df$velobike, 
+                                                   'Да, пользуюсь' = '1',
+                                                   'Нет, не пользуюсь' = '0', .default = NA_character_)))
+summary(df$velobike)
+
+
+levels(df$not_velobike)[1] <- NA
+df$not_velobike <- as.factor(as.character(recode_factor(df$not_velobike, 
+                                                    'Да, пользуюсь' = '1',
+                                                    'Нет, не пользуюсь' = '0', .default = NA_character_)))
+summary(df$not_velobike)
+```
+
+```{r}
+levels(df$aim_bike)[1] <- NA
+
+levels(df$bike_plus_others)[1] <- NA
+df$bike_plus_others <- as.factor(as.character(recode_factor(df$bike_plus_others, 
+                                                        'Да' = '1',
+                                                        'Нет' = '0', .default = NA_character_)))
+summary(df$bike_plus_others)
+
+df$personal_bike <- as.factor(as.character(recode_factor(df$personal_bike, 
+                                                        'Да' = '1',
+                                                        'Нет' = '0', .default = NA_character_)))
+summary(df$personal_bike)
+
+df$velobike_station <- as.factor(as.character(recode_factor(df$velobike_station, 
+                                                         'Да, есть' = '1',
+                                                         'Нет' = '0', .default = NA_character_)))
+summary(df$velobike_station)
+
+df$personal_auto <- as.factor(as.character(recode_factor(df$personal_auto, 
+                                                            'Да, есть' = '1',
+                                                            'Нет' = '0', .default = NA_character_)))
+summary(df$personal_auto)
+
+df$how_far_work <- recode_factor(df$how_far_work, 
+                                 'Более 10 километров' = '>10',
+                                 'Менее 2 километров' = '<2',
+                                 'От 2 до 5 километров' = '2<x<5',
+                                 'От 5 до 10 километров' = '5<x<10',
+                                 .default = NA_character_)
+summary(df$how_far_work)
+
+summary(df$bike_danger)
+summary(df$infrustructure_bike)
+summary(df$bike_work_parking)
+summary(df$bike_home_parking)
+summary(df$bike_importance)
+summary(df$bike_positive)
+
+df$time <- as.character(df$time)
+
+what_is_bike <- as.character(df$what_is_bicycle)
+```
+
+```{r, message = FALSE, warning = FALSE}
+summary(df)
+describe(df)
+```
+
+
+Отберем только необходимые для анализа переменные:
+```{r}
+df %>% select(sex, age, education, work_study, bicycle, personal_bike, 
+              velobike_station, personal_auto, how_far_work, bike_danger, infrustructure_bike, 
+              bike_work_parking, bike_home_parking, bike_importance, bike_positive) -> regr
+summary(regr)
+```
+
+Здесь мы видим, что в нашем опросе: 
+
+* Преобладающее количество женщин: 389
+
+* Средний возраст респондентов около 38 лет (минимальный - 13, максимальный - 69)
+
+* Большинство респондентов имеют высшее образование: 389
+
+* Большая часть в данный момент работает: 436
+
+
+И них: 
+
+* 304 человека пользуются велосипедом
+
+* У 357 человек есть личный велосипед, а у 374 есть личный автомобиль
+
+* Для 238 человек, работа находится дальше, чем в десяти километрах
+
+
+Описание базы данных:
+
+```{r}
+dim(regr)
+```
+564 наблюдения и 16 признаков
+
+```{r}
+str(regr)
+```
+Переменные bike_danger, infrustructure_bike, bike_work_parking, bike_home_parking, bike_importance, bike_positive - порядковые шкалы от 0 до 10, типа integer
+Переменные bicycle, personal_bike, velobike_station, personal_auto - бинарные величины, типа factor
+Переменная sex - бинарная переменная (типа factor)
+Переменные education, district, work_study, experience_bicycle, aim_bike, how_far_work - шкала наименований, типа factor
+
+```{r}
+sum(!complete.cases(regr))
+```
+В рассматриваемом для анализа данных 6 пропущенных значений 
+
+```{r}
+missmap(regr)
+```
+
+Все эти пропущенные значения, находятся в переменной пола, поскольку в опросе изначально предполагался выбор "другого", который мы не будем учитывать в нашем анализе
+
+```{r}
+regr <- na.omit(regr)
+```
+
+Описательные статистики:
+```{r}
+describe(regr)
+```
+
+
+```{r, echo=FALSE}
+#split violin
+GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin, 
+                           draw_group = function(self, data, ..., draw_quantiles = NULL) {
+                             data <- transform(data, xminv = x - violinwidth * (x - xmin), xmaxv = x + violinwidth * (xmax - x))
+                             grp <- data[1, "group"]
+                             newdata <- plyr::arrange(transform(data, x = if (grp %% 2 == 1) xminv else xmaxv), if (grp %% 2 == 1) y else -y)
+                             newdata <- rbind(newdata[1, ], newdata, newdata[nrow(newdata), ], newdata[1, ])
+                             newdata[c(1, nrow(newdata) - 1, nrow(newdata)), "x"] <- round(newdata[1, "x"])
+                             
+                             if (length(draw_quantiles) > 0 & !scales::zero_range(range(data$y))) {
+                               stopifnot(all(draw_quantiles >= 0), all(draw_quantiles <=
+                                                                         1))
+                               quantiles <- ggplot2:::create_quantile_segment_frame(data, draw_quantiles)
+                               aesthetics <- data[rep(1, nrow(quantiles)), setdiff(names(data), c("x", "y")), drop = FALSE]
+                               aesthetics$alpha <- rep(1, nrow(quantiles))
+                               both <- cbind(quantiles, aesthetics)
+                               quantile_grob <- GeomPath$draw_panel(both, ...)
+                               ggplot2:::ggname("geom_split_violin", grid::grobTree(GeomPolygon$draw_panel(newdata, ...), quantile_grob))
+                             }
+                             else {
+                               ggplot2:::ggname("geom_split_violin", GeomPolygon$draw_panel(newdata, ...))
+                             }
+                           })
+
+geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ..., 
+                              draw_quantiles = NULL, trim = TRUE, scale = "area", na.rm = FALSE, 
+                              show.legend = NA, inherit.aes = TRUE) {
+  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin, 
+        position = position, show.legend = show.legend, inherit.aes = inherit.aes, 
+        params = list(trim = trim, scale = scale, draw_quantiles = draw_quantiles, na.rm = na.rm, ...))
+}
+
+# donut graph
+doughnut <-
+  function (x, labels = names(x), edges = 200, outer.radius = 0.8, 
+            inner.radius=0.6, clockwise = FALSE,
+            init.angle = if (clockwise) 90 else 0, density = NULL, 
+            angle = 45, col = NULL, border = FALSE, lty = NULL, 
+            main = NULL, ...){
+    if (!is.numeric(x) || any(is.na(x) | x < 0))
+      stop("'x' values must be positive.")
+    if (is.null(labels))
+      labels <- as.character(seq_along(x))
+    else labels <- as.graphicsAnnot(labels)
+    x <- c(0, cumsum(x)/sum(x))
+    dx <- diff(x)
+    nx <- length(dx)
+    plot.new()
+    pin <- par("pin")
+    xlim <- ylim <- c(-1, 1)
+    if (pin[1L] > pin[2L])
+      xlim <- (pin[1L]/pin[2L]) * xlim
+    else ylim <- (pin[2L]/pin[1L]) * ylim
+    plot.window(xlim, ylim, "", asp = 1)
+    if (is.null(col))
+      col <- if (is.null(density))
+        palette()
+    else par("fg")
+    col <- rep(col, length.out = nx)
+    border <- rep(border, length.out = nx)
+    lty <- rep(lty, length.out = nx)
+    angle <- rep(angle, length.out = nx)
+    density <- rep(density, length.out = nx)
+    twopi <- if (clockwise)
+      -2 * pi
+    else 2 * pi
+    t2xy <- function(t, radius) {
+      t2p <- twopi * t + init.angle * pi/180
+      list(x = radius * cos(t2p), 
+           y = radius * sin(t2p))
+    }
+    for (i in 1L:nx) {
+      n <- max(2, floor(edges * dx[i]))
+      P <- t2xy(seq.int(x[i], x[i + 1], length.out = n),
+                outer.radius)
+      polygon(c(P$x, 0), c(P$y, 0), density = density[i], 
+              angle = angle[i], border = border[i], 
+              col = col[i], lty = lty[i])
+      Pout <- t2xy(mean(x[i + 0:1]), outer.radius)
+      lab <- as.character(labels[i])
+      if (!is.na(lab) && nzchar(lab)) {
+        lines(c(1, 1.05) * Pout$x, c(1, 1.05) * Pout$y)
+        text(1.1 * Pout$x, 1.1 * Pout$y, labels[i], 
+             xpd = TRUE, adj = ifelse(Pout$x < 0, 1, 0), 
+             ...)
+      }
+      ## Add white disc          
+      Pin <- t2xy(seq.int(0, 1, length.out = n*nx),
+                  inner.radius)
+      polygon(Pin$x, Pin$y, density = density[i], 
+              angle = angle[i], border = border[i], 
+              col = "white", lty = lty[i])
+    }
+    
+    title(main = main, ...)
+    invisible(NULL)
+  }
+
+```
+
+Посмотрим на половозрастное распределение респондентов:
+```{r}
+ggplot(data = regr, aes(x = "", y = age, group = sex, fill = sex)) +
+  geom_split_violin(alpha = 0.8) + 
+  scale_y_continuous(name = 'Возраст', breaks=seq(0, 70, 5)) +
+  scale_x_discrete(name = '')+
+  scale_colour_discrete(labels='пол')+ 
+  ggtitle('Половозрастное распределение респондентов')+
+  scale_fill_discrete(labels=c("М","Ж")) +
+  guides(fill=guide_legend(title=NULL)) +
+  theme_bw()
+```
+
+Мы видим, что наибольшее количетсво респондентов сконцентрировано вокруг 35 - 45 лет, из которых большинство женщин. Также в области до 25 лет, мы видим преобладание респондентов мужского пола. 
+
+Рассмотрим зависимость возраста и "катания" на велосипеде
+```{r}
+ggplot(data = regr, aes(x = age, group = bicycle, fill = bicycle)) +
+  geom_density(alpha = 0.5) + geom_rug() +
+  scale_x_continuous(name = 'Возраст', breaks = seq(15, 75, 5))+
+  scale_y_continuous(name = 'Плотность') + 
+  ggtitle('Зависимость респондентов от возраста \nи от статуса "катания"')+
+  scale_fill_discrete(labels=c("Нет","Да")) +
+  guides(fill=guide_legend(title='Катается ли \nна велосипеде')) 
+```
+
+Исходя из данного графика, мы видим, что в принципе данные распределения почти накладываются друг на други, с небольшим смещением некатающихся респондентов в сторону большего возраста.
+
+
+```{r, message = FALSE, warning = FALSE}
+colors2 <- c('palegreen', 'slateblue', 'violet', 'mistyrose', 'purple3', 'tan1', 'aquamarine')
+labs2 = c("Высшее", "Высшее, ученая степень", "Неоконченное высшее", "Неполное среднее", 'Среднее общее', 'Среднее специальное')
+doughnut(as.numeric(table(regr$education)), 
+    col = colors2, 
+    labels = paste(round(as.numeric(table(regr$education))/sum(as.numeric(table(regr$education))), 3) * 100, "%", sep = " "),
+    main = 'Укажите, пожалуйста, уровень Вашего образования',
+    inner.radius = 0.4)
+legend("bottomleft", labs2, cex = 0.6, fill = colors2)
+```
+
+Исходя из этого графика, мы видим процентное соотношение в степени образования респондентов:
+
+Большая часть (почти 70%) имеет высшее образование, а следующая по массовости группа - ученая степень
+
+```{r, message = FALSE, warning = FALSE}
+distr <- as.data.frame(table(df$district)[table(df$district)>15])
+distr %>% arrange(desc(Freq)) -> distr
+
+ggplot(data=distr, 
+       aes(x=Var1, y=Freq)) +
+  geom_bar(colour="black", fill="cadetblue1", width=.8, stat="identity") +
+  geom_text(aes(label=Freq), vjust=-1, size=5, colour = 'black', fontface = 'bold') +
+  scale_x_discrete(limits=c('тропарево-никулино',
+                            'гагаринский', 
+                            'раменки', 
+                            'басманный',
+                            'хорошево-мневники',
+                            'фили-давыдково',
+                            'хамовники',
+                            'обручевский',  
+                            'академический',
+                            'сокольники'),
+                   labels = c('Тропарево-Никулино',
+                            'Гагаринский', 
+                            'Раменки', 
+                            'Басманный',
+                            'Хорошево-Мневники',
+                            'Фили-Давыдково',
+                            'Хамовники',
+                            'Обручевский',  
+                            'Академический',
+                            'Сокольники')) +
+  scale_y_continuous(limits = c(0, 60)) +
+  xlab("") + ylab("Частота") +
+  ggtitle("Самые популярные районы Москвы, принявшие участие")
+```
+
+На данном графике, мы видим районы, в которых проживаем максимальное количество респондентов (>15)
+
+Проверим зависимость между возрастом и наличием автомобиля:
+```{r}
+ggplot(data = regr, aes(x = age, group = personal_auto, fill = personal_auto)) +
+  geom_density(alpha = 0.5) + geom_rug()+
+  scale_x_continuous(name = 'Возраст', breaks = seq(15, 75, 5))+
+  scale_y_continuous(name = 'Плотность') + 
+  ggtitle('Зависимость респондентов от возраста \nи от наличия автомобиля')+
+  scale_fill_discrete(labels=c("Нет","Есть")) +
+  guides(fill=guide_legend(title='Автомобиль?')) 
+```
+
+Как мы видим, данные распределения довольно плохо накладываются друг на друга: автомобиль есть преимущественно у населения в возрасте от 30 до 50 лет.
+
+Проверим гипотезу о равенстве возрастов относительно наличия автомобиля
+```{r}
+t.test(data = regr, age ~ personal_auto)
+```
+Соответсвенно, исходя из того, p-value меньше чем конвенциональное значение, мы можем сделать вывод о том, что средние в двух подвыборка неравны.
+
+Посмотрим на зависимость между возрастом и наличием автомобиля:
+```{r}
+ggplot(data = regr, aes(x = age, group = personal_bike, fill = personal_bike)) +
+  geom_density(alpha = 0.5) + geom_rug() + 
+  scale_x_continuous(name = 'Возраст', breaks = seq(15, 75, 5))+
+  scale_y_continuous(name = 'Плотность') + 
+  ggtitle('Зависимость респондентов от возраста \nи от наличия велосипеда')+
+  scale_fill_discrete(labels=c("Нет","Есть")) +
+  guides(fill=guide_legend(title='Велосипед?')) 
+```
+
+Соответственно, мы видим, что в приниципе распределения похожи друг на друга, тем не менее, в возрасте от 30 до 40 больше респондентов, у которых есть велосипед
+
+Проверим гипотезу о равенстве возрастов относительно владения личным велосипедом.
+```{r}
+t.test(data = regr, age ~ personal_bike)
+```
+Соотвественно, исходя из довольно большого p-value, мы не можем отвергнуть нулевую гипотезу о равенстве средних, следовательно средний возраст у тех, у кого есть личный велосипед и у тех, у кого нет, не отличается.
+
+Посмотрим на распределения возрастов, относительно велосипедного стажа:
+```{r}
+ggplot(data = regr, aes(y = age, group = how_far_work, fill = how_far_work)) +
+  geom_boxplot()+ 
+  scale_y_continuous(name = 'Возраст', breaks = seq(15, 75, 5))+
+  guides(fill=guide_legend(title='Как далеко до работы')) 
+```
+
+Согласно представленному графику, мы видим, что средний возраст в каждой из категории примерно равен, а также что в каждой из категорий мы имеем выбросы по верхнему возрасту
+
+Проверим гипотезу относительно равности возраста в разных категориях дистанции до работы
+```{r}
+anova.res <- aov(data = regr, age ~ how_far_work) 
+summary(anova.res)  
+
+```
+Таким образом, мы видим, что p-value больше конвенционального значения, следовательно в каждой из подвыборках равный средний возраст
+
+Посмотрим на восприятие велосипедистов в Москве:
+```{r}
+pl <- barplot(table(regr$bike_positive), 
+              main = "Насколько положительно вы воспринимаете велосипедистов?", 
+              col = "red",
+              ylim = c(0, 160),
+              ylab = "Частота ответа", 
+              axes = FALSE)
+axis(2, at = seq(from = 0, to = 160, by = 5))
+text(x = pl, y = table(regr$bike_positive), labels = table(regr$bike_positive), pos = 3)
+```
+
+Согласно представленному графику, мы видим, что восприятие велосипедистов довольно поляризированно, поскольку большая часть респондентов относится к ним чрезвычайно положительно (146), но в то же время, большая часть респондентов относится чрезвычайно плохо (89)
+
+Мы можем посмотреть на корреляцию между интервальными переменными:
+```{r, message = FALSE, warning = FALSE}
+AA <- xyTable(df$bike_importance, df$bike_danger)
+coeff_bigger=0.5
+plot(AA$x, AA$y, 
+     cex=AA$number*coeff_bigger, 
+     pch=18,
+     col='tomato',
+     xlab= "Важность велосипеда", 
+     ylab="Опасность велосипеда", 
+     xlim=c(1,10),
+     ylim=c(0,10),
+     axes = F); text(AA$x, 
+                        AA$y, 
+                        AA$number, 
+                        cex = 1, 
+                        pos = 1, 
+                        col = "black")
+axis(1, at = seq(from = 0, to = 10, by = 1))
+axis(2, at = seq(from = 0, to = 10, by = 1))
+
+```
+
+Как мы видим, тут можно наблюдать видимую отрицательную зависимость меду важностью велосипеда и опасностью велосипеде
+
+
+Анализ: построение logit модели
+```{r}
+regr_logit <- glm(bicycle ~ (.), family = binomial, data = regr)
+summary(regr_logit)
+```
+При полной спецификации модели, мы видим, что некоторые из наших параметров оказались значимыми, как например наличие личного велосипеда. 
+Тем не менее, мы видим, что коэффициент при параметр восприятия инфраструктуры оказался незначимым, и очень маленькими, что говорит об отсутствии связи между вероятностью того, что человек будет кататсья на велосипеде и развитостью инфраструктуры. 
+
+Также мы видим, что уровень образования оказался не значимым.
+
+Найдем самую экономную модель исходя из AIC
+```{r}
+regr.AIC <- step(regr_logit)
+summary(regr.AIC)
+
+itog <- regr.AIC
+```
+
+```{r}
+summ(itog, robust = T, exp = T, vifs = TRUE, scale = T, center = T)
+```
+
+Исходя из данной спецификации модели, мы видим, что все переменные оказались значимыми, даже при применении робастных ошибок HC3
+
+```{r}
+effect_plot(itog, pred = bike_importance, interval = TRUE, 
+            x.label = 'Важность велосипеда',
+            y.label = 'Вероятность, что человек катается')
+
+```
+
+Мы можем наблюдать положительное влияние важности велосипеда для респондента на вероятность катания, которая значительно растет на протяжении всего отрезка
+
+```{r}
+effect_plot(itog, pred = bike_danger, interval = TRUE,
+            x.label = 'Опасность велосипеда',
+            y.label = 'Вероятность, что человек катается')
+```
+
+Исходя из данного графика мы видим отрицательное влияние опасности велосипеда на вероятность того, что человек будет кататься на велосипеде
+
+```{r}
+
+effect_plot(itog, pred = age, interval = TRUE,
+            x.label = 'Возраст',
+            y.label = 'Вероятность, что человек катается')
+
+
+```
+
+Мы наблюдаем отрицательное влияние возраста на вероятность того, что человек будет кататься на велосипеде
+
+```{r}
+effect_plot(itog, pred = personal_bike, interval = TRUE,
+            x.label = 'Наличие личного велосипеда',
+            y.label = 'Вероятность, что человек катается')
+```
+
+Здесь мы можем видеть, значительный прирост в вероятности при переходе от категории отсутствия личного велосипеда к его наличию.
+
+
+Доверительные интервалы получившихся коэффициентов
+```{r}
+
+plot_summs(itog, inner_ci_level = .9)
+
+```
+
+Доверительные интервалы для разных типов робастных ошибок
+```{r}
+plot_summs(itog, itog, itog, robust = list(FALSE, "HC0", "HC3"),
+           model.names = c("logit", "HC0", "HC3"))
+```
+
+## Главные выводы: 
+Исходя из построенное модели мы можем сделать выводы о:
+
+* Сильном положительном влиянии показателя важности велосипеда для респондента на вероятность его катания. 
+* Отрицательной взаимосвязи между восприятием опасности велосипедной дороги до работы и вероятности его катания.
+* Значительной роли наличия велосипеда у респондента, которая значительно увеличивают вероятность езды на велосипеде.
+* Отрицательном влиянии возраста респондента на вероятность езды на велосипеде.
